@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Google Sheet Viewer</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#f7f9fc; padding:24px; max-width:900px; margin:auto; }
+  #searchInput { width:100%; padding:10px; margin-bottom:20px; font-size:16px; border:1px solid #e2e8f0; border-radius:8px; }
+  html { scroll-behavior: smooth; }
+  .card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 16px; margin-bottom: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+  .card div { margin-bottom: 6px; }
+  mark { background: yellow; padding: 0 2px; }
+</style>
+</head>
+<body>
+<h1>Directory</h1>
+
+<input id="searchInput" type="text" placeholder="Search..." />
+
+<div id="cardContainer"></div>
+
+<script>
+const sheetURL = "https://docs.google.com/spreadsheets/d/1mvFObcnflcZOeknieOtQdgCV1l_LZlljtQS1Vdx2Xgs/gviz/tq?tqx=out:json";
+
+let rawRows = [];
+let headers = [];
+let filteredRows = [];
+const searchInput = document.getElementById('searchInput');
+
+function fetchSheet() {
+  fetch(sheetURL)
+    .then(res => res.text())
+    .then(text => {
+      const json = JSON.parse(text.substr(text.indexOf('{')));
+      headers = json.table.cols.map(c => c.label || '');
+      rawRows = json.table.rows.map(r => {
+        const obj = {};
+        r.c.forEach((cell, idx) => {
+          obj[headers[idx]] = cell && cell.v !== null && cell.v !== undefined ? cell.v : "";
+        });
+        return obj;
+      });
+      renderTable();
+    })
+    .catch(err => {
+      console.error('Failed to fetch sheet:', err);
+      document.getElementById('cardContainer').innerHTML = '<p style="color:#dc2626;">Error loading sheet — ensure it is shared/public.</p>';
+    });
+}
+
+function highlightMatch(val, q) {
+  if (!q) return val;
+  const regex = new RegExp("(" + q + ")", "gi");
+  return val.toString().replace(regex, '<mark>$1</mark>');
+}
+
+function renderTable() {
+  const container = document.getElementById('cardContainer');
+  container.innerHTML = '';
+
+  const q = searchInput.value.toLowerCase().trim();
+  filteredRows = rawRows.filter(r =>
+    !q || headers.some(h => ((r[h] || '').toString().toLowerCase().includes(q)))
+  );
+
+  filteredRows.forEach(obj => {
+    const card = document.createElement('div');
+    card.className = 'card';
+
+    headers.forEach(h => {
+      const row = document.createElement('div');
+      let val = obj[h] ?? "";
+
+      if (/extension/i.test(h))
+        val = `<span style="color:#2563eb; font-weight:bold;">${val}</span>`;
+      if (/bleep/i.test(h))
+        val = `<span style="color:#dc2626; font-weight:bold;">${val}</span>`;
+
+      let cleanedVal = val.replace(/<[^>]*>/g, ""); 
+      let highlighted = highlightMatch(cleanedVal, q);
+
+      if (/extension/i.test(h))
+        highlighted = `<span style="color:#2563eb; font-weight:bold;">${highlighted}</span>`;
+      if (/bleep/i.test(h))
+        highlighted = `<span style="color:#dc2626; font-weight:bold;">${highlighted}</span>`;
+
+      row.innerHTML = `<strong>${h}:</strong> ${highlighted}`;
+      card.appendChild(row);
+    });
+
+    container.appendChild(card);
+  });
+
+  if (filteredRows.length === 0) {
+    container.innerHTML = '<p>No results found.</p>';
+  }
+}
+
+searchInput.addEventListener('input', renderTable);
+
+fetchSheet();
+</script>
+
+</body>
+</html>
