@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Google Sheet Viewer</title>
+<style>
+  body { font-family: Arial, sans-serif; background:#f7f9fc; padding:24px; max-width:800px; margin:auto; }
+  #searchInput { width:100%; padding:10px; margin-bottom:20px; font-size:16px; }
+  html { scroll-behavior: smooth; }
+</style>
+</head>
+<body>
+<h1>Directory</h1>
+
+<input id="searchInput" type="text" placeholder="Search..." />
+
+<div id="cardContainer"></div>
+
+<script>
+const sheetURL = "https://docs.google.com/spreadsheets/d/1mvFObcnflcZOeknieOtQdgCV1l_LZlljtQS1Vdx2Xgs/gviz/tq?tqx=out:json";
+
+let rawRows = [];
+let headers = [];
+let filteredRows = [];
+
+function fetchSheet() {
+  fetch(sheetURL)
+    .then(res => res.text())
+    .then(text => {
+      const json = JSON.parse(text.substr(47).slice(0, -2));
+      headers = json.table.cols.map(c => c.label);
+      rawRows = json.table.rows.map(r => {
+        const obj = {};
+        r.c.forEach((cell, idx) => {
+          obj[headers[idx]] = cell ? cell.v : "";
+        });
+        return obj;
+      });
+      renderTable();
+    });
+}
+
+function renderTable() {
+  const container = document.getElementById('cardContainer');
+  container.innerHTML = '';
+
+  const q = searchInput.value.toLowerCase().trim();
+  filteredRows = rawRows.filter(r =>
+    !q || headers.some(h => (r[h] || '').toLowerCase().includes(q))
+  );
+
+  filteredRows.forEach(obj => {
+    const card = document.createElement('div');
+    card.style.background = 'white';
+    card.style.border = '1px solid #e2e8f0';
+    card.style.borderRadius = '12px';
+    card.style.padding = '16px';
+    card.style.marginBottom = '16px';
+    card.style.boxShadow = '0 4px 12px rgba(0,0,0,0.05)';
+
+    headers.forEach(h => {
+      const row = document.createElement('div');
+      row.style.marginBottom = '6px';
+      let val = obj[h] ?? '';
+
+      if (/extension/i.test(h))
+        val = `<span style="color:#2563eb; font-weight:bold;">${val}</span>`;
+      if (/bleep/i.test(h))
+        val = `<span style="color:#dc2626; font-weight:bold;">${val}</span>`;
+
+      row.innerHTML = `<strong>${h}:</strong> ${val}`;
+      card.appendChild(row);
+    });
+
+    container.appendChild(card);
+  });
+}
+
+searchInput.oninput = () => { renderTable(); };
+
+fetchSheet();
+</script>
+
+</body>
+</html>
