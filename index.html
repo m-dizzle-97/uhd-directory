@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Google Sheet → Searchable Table</title>
+  <style>
+    :root{--accent:#2563eb;--bg:#f7fafc}
+    body{font-family:Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial; margin:0; padding:24px; background:var(--bg); color:#0f172a}
+    .container{max-width:1100px;margin:0 auto;background:white;border-radius:12px;padding:18px;box-shadow:0 6px 24px rgba(2,6,23,.08)}
+    header{display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+    h1{margin:0;font-size:20px}
+    p.lead{margin:0;color:#475569}
+    .toolbar{display:flex;gap:8px;align-items:center;margin-top:14px}
+    .search{flex:1;min-width:220px}
+
+    table{width:100%;border-collapse:collapse;margin-top:18px}
+    th,td{padding:8px 10px;text-align:left;border-bottom:1px solid #f1f5f9}
+    th{background:#fbfdff;position:sticky;top:0}
+    th.sortable{cursor:pointer}
+    tr:hover td{background:#f8fafc}
+
+    .footer{margin-top:12px;color:#64748b;font-size:13px}
+  </style>
+</head>
+<body>
+  <div class="container">
+    <header>
+      <div>
+        <h1>Google Sheet → Searchable HTML table</h1>
+        <p class="lead">Your specified Google Sheet is loaded automatically. Type in the search box below to filter data.</p>
+      </div>
+    </header>
+
+    <div class="toolbar">
+      <input id="searchInput" class="search" type="text" placeholder="Search (type to filter across all columns)" />
+      <select id="pageSizeSelect">
+        <option value="10">10 rows</option>
+        <option value="25">25 rows</option>
+        <option value="50">50 rows</option>
+        <option value="100">100 rows</option>
+      </select>
+    </div>
+
+    <div id="tableWrap">
+      <table id="dataTable" aria-live="polite"><thead></thead><tbody></tbody></table>
+    </div>
+
+    <div class="footer">
+      <p>If nothing shows up — ensure the sheet is published or shared publicly (Anyone with link can view).</p>
+    </div>
+  </div>
+
+  <script>
+    const AUTO_LOAD_URL = 'https://docs.google.com/spreadsheets/d/1mvFObcnflcZOeknieOtQdgCV1l_LZlljtQS1Vdx2Xgs/export?format=csv&gid=1911649658';
+
+    const searchInput = document.getElementById('searchInput');
+    const dataTable = document.getElementById('dataTable');
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+
+    let rawRows = [];
+    let headers = [];
+    let filteredRows = [];
+    let sortState = {col: null, dir: 1};
+
+    function parseCSV(text){
+      const rows = [];
+      let cur = '';
+      let row = [];
+      let inQuotes = false;
+      for(let i=0;i<text.length;i++){
+        const ch = text[i];
+        const nxt = text[i+1];
+        if(ch === '"'){
+          if(inQuotes && nxt === '"'){ cur += '"'; i++; continue; }
+          inQuotes = !inQuotes;
+          continue;
+        }
+        if(ch === ',' && !inQuotes){ row.push(cur); cur=''; continue; }
+        if((ch === '\n' || ch === '\r') && !inQuotes){
+          if(cur !== '' || row.length>0){ row.push(cur); cur=''; rows.push(row); row = []; }
+          if(ch === '\r' && nxt === '\n') i++;
+          continue;
+        }
+        cur += ch;
+      }
+      if(cur !== '' || row.length>0){ row.push(cur); rows.push(row); }
+      return rows;
+    }
+
+    function loadFromUrl(url){
+      fetch(url).then(r=>{
+        if(!r.ok) throw new Error('Network error '+r.status);
+        return r.text();
+      }).then(text=>{
+        const rows = parseCSV(text);
+        headers = rows[0].map(h=>h.trim());
+        rawRows = rows.slice(1).map(r=>{
+          const obj={};
+          for(let i=0;i<headers.length;i++) obj[headers[i]] = r[i] ?? '';
+          return obj;
+        });
+        filteredRows = rawRows.slice();
+        renderTable();
+      });
+    }
+
+    function renderTable(){
+      const thead = dataTable.querySelector('thead');
+      const tbody = dataTable.querySelector('tbody');
+      thead.innerHTML='';
+      tbody.innerHTML='';
+
+      const tr = document.createElement('tr');
+      headers.forEach((h,ci)=>{
+        const th=document.createElement('th');
+        th.textContent=h;
+        th.classList.add('sortable');
+        th.onclick=()=>{
+          if(sortState.col===ci) sortState.dir*=-1;
+          else { sortState.col=ci; sortState.dir=1; }
+          sortByColumn(ci, sortState.dir);
+          renderTable();
+        };
+        tr.appendChild(th);
+      });
+      thead.appendChild(tr);
+
+      const q = searchInput.value.toLowerCase().trim();
+      const pageSize=parseInt(pageSizeSelect.value,10);
+      filteredRows = rawRows.filter(r=>{
+        if(!q) return true;
+        return headers.some(h=>(r[h]||'').toLowerCase().includes(q));
+      });
+
+      filteredRows.slice(0,pageSize).forEach(obj=>{
+        const r=document.createElement('tr');
+        headers.forEach(h=>{
+          const td=document.createElement('td');
+          td.textContent=obj[h]??'';
+          r.appendChild(td);
+        });
+        tbody.appendChild(r);
+      });
+    }
+
+    function sortByColumn(ci,dir){
+      const key=headers[ci];
+      rawRows.sort((a,b)=>{
+        const A=(a[key]||'').toString();
+        const B=(b[key]||'').toString();
+        const An=parseFloat(A.replace(/[^0-9.-]/g,'')); 
+        const Bn=parseFloat(B.replace(/[^0-9.-]/g,''));
+        if(!isNaN(An) && !isNaN(Bn)) return (An-Bn)*dir;
+        return A.localeCompare(B)*dir;
+      });
+    }
+
+    searchInput.oninput=renderTable;
+    pageSizeSelect.onchange=renderTable;
+
+    loadFromUrl(AUTO_LOAD_URL);
+  </script>
+</body>
+</html>
